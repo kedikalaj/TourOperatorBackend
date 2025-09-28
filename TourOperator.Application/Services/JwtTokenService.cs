@@ -24,7 +24,7 @@ namespace TourOperator.Application.Services
             var jti = Guid.NewGuid().ToString();
 
             var claims = new List<Claim> {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                new Claim(ClaimTypes.Email, user.Email),
                 new Claim(JwtRegisteredClaimNames.Jti, jti),
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Role, user.Role)
