@@ -140,7 +140,54 @@ This project seeds two users in the `OnModelCreating` method of `AppDbContext` f
 - **Role**: `TourOperator`
 - **CreatedAt**: A fixed timestamp
 
+---
+## API Endpoints & Usage
 
+All endpoints are under `/api`.
+
+---
+
+### Auth (register/login/logout)
+
+* `POST /api/auth/register`  
+  * Registers a new user.  
+  * Accepts JSON `{ Email, Password, Role, TourOperatorId }`.  
+  * Returns created user info or conflict if duplicate.  
+
+* `POST /api/auth/login`  
+  * Authenticates a user.  
+  * Returns `{ token, expiresAt }` (JWT contains `role`).  
+
+* `POST /api/auth/logout`  
+  * Revokes the JWT by extracting its `jti` and placing it into Redis blacklist until token expiry.  
+
+---
+
+### Upload CSV (TourOperator only)
+
+`POST /api/touroperators/{tourOperatorId}/pricing-upload`
+
+* Authorization: **TourOperator** role only.  
+* Server also validates that the authenticated user's `tourOperatorId` claim matches the `{tourOperatorId}` route parameter; otherwise returns `403`.  
+* Accepts `multipart/form-data` with:  
+  * `file` — CSV file (required).  
+  * `connectionId` — SignalR connection ID for receiving progress events.  
+* Returns `202 Accepted` once processing starts.  
+
+---
+
+### Admin GET (paged with caching)
+
+`GET /api/data/{tourOperatorId}?page=1&pageSize=50`
+
+* Authorization: **Admin** role only.  
+* Returns paginated pricing records for the requested operator.  
+* Uses Redis for caching:  
+  * Responses are cached per `{tourOperatorId, page, pageSize}` key.  
+  * Cache TTL: 30 minutes.  
+  * Logs cache hits and misses.  
+
+---
 
 
 ### SignalR hub
