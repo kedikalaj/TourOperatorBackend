@@ -132,12 +132,176 @@ This project seeds two users in the `OnModelCreating` method of `AppDbContext` f
 - **Email**: `admin@example.com`
 - **Password**: `Safepwd@1` (hashed using BCrypt)
 - **Role**: `Admin`
-- **CreatedAt**: A fixed timestamp (`fixedDateTime`)
+- **CreatedAt**: A fixed timestamp
 
 #### TourOperator User
 - **Email**: `operator@example.com`
 - **Password**: `Safepwd@2` (hashed using BCrypt)
 - **Role**: `TourOperator`
-- **CreatedAt**: A fixed timestamp (`fixedDateTime`)
+- **CreatedAt**: A fixed timestamp
 
+
+
+
+### SignalR hub
+
+* Hub endpoint: `/hubs/upload`
+* Client flow:
+
+  1. Connect to SignalR hub, obtain `connectionId`
+  2. Upload CSV to `/api/touroperators/{id}/pricing-upload` including `connectionId`
+  3. Server sends progress messages using `_hub.Clients.Client(connectionId).SendAsync("Progress", "message")`
+
+**JS client minimal example:**
+
+```js
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignalR Upload Progress</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+</head>
+<body>
+    <h1>SignalR Upload Progress Example</h1>
+    <button id="connectBtn">Connect to Hub</button>
+    <p id="connectionId">Connection ID: not connected</p>
+    <p id="progress">Progress: N/A</p>
+
+    <script>
+        let connection;
+
+        document.getElementById("connectBtn").addEventListener("click", async () => {
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("https://localhost:7071/hubs/upload", { withCredentials: false })
+    .configureLogging(signalR.LogLevel.Information)
+    .build();
+
+
+            connection.on("Progress", (message) => {
+                document.getElementById("progress").innerText = "Progress: " + message;
+            });
+
+            try {
+                await connection.start();
+                console.log("Connected to SignalR Hub");
+
+                const connectionId = await connection.invoke("GetConnectionId");
+                document.getElementById("connectionId").innerText = "Connection ID: " + connectionId;
+                console.log("My connection ID:", connectionId);
+
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    </script>
+</body>
+</html>
+
+```
+
+<img width="1361" height="760" alt="image" src="https://github.com/user-attachments/assets/d5cf48f6-ee53-481c-a172-b086f2db02aa" />
+
+
+---
+
+## CSV format & samples
+
+**Header must match these names exactly (case-sensitive mapping in `PricingCsvMap`)**:
+
+```
+RouteCode,SeasonCode,EconomySeats,BusinessSeats,Date,EconomyPrice,BusinessPrice
+```
+
+### Small sample CSV
+
+`pricing-sample.csv`:
+
+```csv
+RouteCode,SeasonCode,EconomySeats,BusinessSeats,Date,EconomyPrice,BusinessPrice
+TIR-ROM,SUMMER24,120,20,2024-06-01,150.00,450.00
+TIR-ROM,SUMMER24,118,20,2024-06-02,155.00,460.00
+TIR-ROM,SUMMER24,115,18,2024-06-03,160.00,470.00
+TIR-MIL,SUMMER24,130,25,2024-06-01,140.00,400.00
+TIR-MIL,SUMMER24,125,25,2024-06-02,145.00,410.00
+TIR-MIL,SUMMER24,120,24,2024-06-03,150.00,420.00
+ROM-PAR,AUTUMN24,100,15,2024-09-10,180.00,500.00
+ROM-PAR,AUTUMN24,98,15,2024-09-11,185.00,510.00
+ROM-PAR,AUTUMN24,95,14,2024-09-12,190.00,520.00
+```
+---
+
+## Caching (Redis)
+
+* Admin GET responses are cached using `IDistributedCache` (StackExchangeRedis).
+* Token revocation uses Redis: when a user logs out, server extracts token `jti` and stores a blacklist key `bl_jti:{jti}` with TTL up to token expiry. JWT validation includes checking Redis for that `jti`.
+* The **GetPricing** endpoint also leverages Redis caching. Results are cached per `tourOperatorId`, `page`, and `pageSize` with a 30-minute expiration, reducing database load and improving response times. Cache hits and misses are logged for monitoring.
+
+---
+
+## Logging & observability
+
+* Serilog used for structured logs; `UseSerilogRequestLogging()` in `Program.cs`.
+* CSV processing logs:
+
+  * Upload start
+  * Row-level validation warnings (bad date/price/etc.)
+  * Batched bulk insert completions
+  * Total processed rows and errors
+
+---
+
+## Bulk insert & performance notes
+
+* CSV is processed in streaming fashion (row-by-row) and rows are added to `DataTable`. When batch size reaches threshold (e.g., 5k rows) the `DataTable` is written to SQL Server with `SqlBulkCopy`.
+* Benefits:
+
+  * Low memory footprint (you only keep a batch in memory).
+  * Fast writes.
+* Considerations:
+
+  * Maintain mapping between DataTable columns and DB columns.
+  * Handle duplicate logic / deduping if necessary (e.g., unique index on `{TourOperatorId, Date, RouteCode}` and decide upsert/delete strategy).
+  * For extremely large files, consider background queue (e.g., an enqueued job with status endpoint) to fully decouple upload request from processing.
+
+---
+
+## Postman collection
+
+A `postman_collection.yaml` (included in repo) contains example requests:
+
+* Register
+* Login
+* Upload (multipart)
+* Admin GET
+
+Sample entry (upload):
+
+```yaml
+- name: Upload pricing CSV (multipart)
+  request:
+    method: POST
+    header:
+      - key: Authorization
+        value: "Bearer {{jwt}}"
+    url:
+      raw: "{{baseUrl}}/api/touroperators/{{tourOperatorId}}/pricing-upload"
+    body:
+      mode: formdata
+      formdata:
+        - key: file
+          type: file
+          src: "./sample.csv"
+        - key: connectionId
+          value: "REPLACE_WITH_SIGNALR_CONNECTION_ID"
+```
+
+---
+
+## To-do / improvements
+
+* Add rate limiting & upload quotas.
+* Add CI/CD Pipeline
+* Add refresh tokens for JWT rotation.
 
