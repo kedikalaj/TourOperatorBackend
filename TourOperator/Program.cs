@@ -34,6 +34,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<ICsvProcessingService, CsvProcessingService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IPricingDataService, PricingDataService>();
 builder.Services.AddScoped<AppDbContext>();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>

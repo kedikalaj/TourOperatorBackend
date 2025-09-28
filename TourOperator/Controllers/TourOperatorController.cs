@@ -6,17 +6,18 @@ using TourOperator.Application.Interfaces;
 namespace TourOperator.Controllers
 {
     [ApiController]
-    [Route("api/touroperators/{tourOperatorId:guid}/pricing-upload")]
-    public class PricingUploadController : ControllerBase
+    [Route("api/touroperators/{tourOperatorId:guid}")]
+    public class TourOperatorController : ControllerBase
     {
-        private readonly ICsvProcessingService _svc;
+        private readonly ICsvProcessingService _csvProcessingService;
 
-        public PricingUploadController(ICsvProcessingService svc)
+        public TourOperatorController(ICsvProcessingService csvProcessingService)
         {
-            _svc = svc;
+            _csvProcessingService = csvProcessingService;
         }
 
-        [HttpPost]
+        // POST /api/touroperators/{tourOperatorId}/pricing-upload
+        [HttpPost("pricing-upload")]
         [Authorize(Roles = "TourOperator")]
         public async Task<IActionResult> Upload([FromRoute] Guid tourOperatorId, [FromForm] IFormFile file, [FromForm] string connectionId, CancellationToken ct)
         {
@@ -26,12 +27,12 @@ namespace TourOperator.Controllers
                 return Forbid();
 
             if (file == null || file.Length == 0)
-                return BadRequest("file missing");
+                return BadRequest("File is missing");
 
             Log.Information("Upload started for tourOperatorId={TourOperatorId} by user={User}", tourOperatorId, User.Identity?.Name);
 
             using var stream = file.OpenReadStream();
-            await _svc.ProcessCsvAsync(stream, tourOperatorId, connectionId, ct);
+            await _csvProcessingService.ProcessCsvAsync(stream, tourOperatorId, connectionId, ct);
 
             Log.Information("Upload finished for tourOperatorId={TourOperatorId}", tourOperatorId);
             return Accepted(new { message = "File processing started/completed" });
