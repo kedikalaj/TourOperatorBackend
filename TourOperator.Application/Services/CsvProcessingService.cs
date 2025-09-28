@@ -28,14 +28,6 @@ namespace TourOperator.Application.Services
 
         public async Task ProcessCsvAsync(Stream csvStream, Guid tourOperatorId, string? connectionId, CancellationToken ct = default)
         {
-
-
-            for (int i = 0; i <= 100; i += 10)
-            {
-                await Task.Delay(500, ct); // fake work
-                await _hub.Clients.Client(connectionId).SendAsync("Progress", $"{i}% done", ct);
-            }
-
             await _hub.Clients.Client(connectionId).SendAsync("Progress", "Validation started", ct);
             Log.Information("CSV processing started for tourOperatorId={TourOperatorId}", tourOperatorId);
 

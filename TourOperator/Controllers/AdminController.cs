@@ -19,7 +19,6 @@ namespace TourOperator.Controllers
             _cache = cache;
         }
 
-        // GET /api/data/{tourOperatorId}
         [HttpGet]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetPricing([FromRoute] Guid tourOperatorId, int page = 1, int pageSize = 50)

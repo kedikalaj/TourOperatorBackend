@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using Serilog.Events;
 using StackExchange.Redis;
 using TourOperator.Application.Hubs;
 using TourOperator.Application.Interfaces;
@@ -18,13 +19,13 @@ builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(swagger =>
 {
-    //swagger.EnableAnnotations();
     //This is to generate the Default UI of Swagger Documentation
     swagger.SwaggerDoc("v1", new OpenApiInfo
     {
         Version = "v1",
         Title = "TourOperator"
     });
+
     // To Enable authorization using Swagger (JWT)
     swagger.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme()
     {
@@ -58,7 +59,7 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentUserName()
     .WriteTo.Console()
-    .WriteTo.File("logs/log.txt")
+    .WriteTo.File("logs/log.txt", restrictedToMinimumLevel: LogEventLevel.Information)
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -74,7 +75,6 @@ builder.Services.AddScoped<AppDbContext>();
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")));
 
-// JWT Auth
 var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
@@ -88,7 +88,6 @@ builder.Services.AddCors(options =>
             .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
-        //.AllowCredentials(); // required for SignalR
     });
 });
 
@@ -115,7 +114,7 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
         ValidateLifetime = true
     };
-    // to allow SignalR to receive token via query string if needed
+
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
