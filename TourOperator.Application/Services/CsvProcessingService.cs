@@ -32,14 +32,25 @@ namespace TourOperator.Application.Services
             Log.Information("CSV processing started for tourOperatorId={TourOperatorId}", tourOperatorId);
 
             var cfg = new CsvConfiguration(CultureInfo.InvariantCulture) { MissingFieldFound = null, BadDataFound = null, HeaderValidated = null };
+            int total = 0;
+            using (var readerCount = new StreamReader(csvStream, leaveOpen: true))
+            using (var csvCount = new CsvReader(readerCount, cfg))
+            {
+                await csvCount.ReadAsync();
+                csvCount.ReadHeader();
+                while (await csvCount.ReadAsync())
+                    total++;
+            }
+            csvStream.Position = 0;
+
             using var reader = new StreamReader(csvStream);
             using var csv = new CsvReader(reader, cfg);
             csv.Context.RegisterClassMap<PricingCsvMap>();
+            await csv.ReadAsync();
+            csv.ReadHeader();
 
-            var records = new List<PricingRecord>();
-            int total = 0;
             int processed = 0;
-            // i used this to stream and build DataTable for SqlBulkCopy in batches
+            int nextThreshold = 10;
             var dt = CreateDataTableSkeleton();
 
             while (await csv.ReadAsync())
@@ -47,26 +58,22 @@ namespace TourOperator.Application.Services
                 try
                 {
                     var rec = csv.GetRecord<PricingCsvRow>();
-                    total++;
-                    // validate/sanitize
                     if (!DateTime.TryParse(rec.Date, out var dtDate))
                     {
-                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {total}: Invalid date '{rec.Date}' - skipped");
-                        Log.Warning("Invalid date at row {Row}: {Value}", total, rec.Date);
+                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {processed + 1}: Invalid date '{rec.Date}' - skipped");
+                        Log.Warning("Invalid date at row {Row}: {Value}", processed + 1, rec.Date);
                         continue;
                     }
-
                     if (!decimal.TryParse(rec.EconomyPrice, NumberStyles.Any, CultureInfo.InvariantCulture, out var econPrice))
                     {
-                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {total}: Invalid economy price - skipped");
-                        Log.Warning("Invalid economy price at row {Row}", total);
+                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {processed + 1}: Invalid economy price - skipped");
+                        Log.Warning("Invalid economy price at row {Row}", processed + 1);
                         continue;
                     }
-
                     if (!decimal.TryParse(rec.BusinessPrice, NumberStyles.Any, CultureInfo.InvariantCulture, out var busPrice))
                     {
-                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {total}: Invalid business price - skipped");
-                        Log.Warning("Invalid business price at row {Row}", total);
+                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"Row {processed + 1}: Invalid business price - skipped");
+                        Log.Warning("Invalid business price at row {Row}", processed + 1);
                         continue;
                     }
 
@@ -85,7 +92,6 @@ namespace TourOperator.Application.Services
                         BusinessPrice = busPrice
                     };
 
-                    // Add to DataTable batch
                     var row = dt.NewRow();
                     row["Id"] = pr.Id;
                     row["TourOperatorId"] = pr.TourOperatorId;
@@ -105,17 +111,18 @@ namespace TourOperator.Application.Services
                     {
                         await BulkInsertAsync(dt, ct);
                         dt.Clear();
-                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"{processed} rows processed", ct);
                     }
 
-                    if (processed % 1000 == 0)
+                    int percent = (processed * 100) / total;
+                    if (percent >= nextThreshold)
                     {
-                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"{processed} rows processed", ct);
+                        await _hub.Clients.Client(connectionId).SendAsync("Progress", $"{percent}% completed", ct);
+                        nextThreshold += 10;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex, "Exception while parsing csv row {Row}", total);
+                    Log.Error(ex, "Exception while parsing csv row {Row}", processed + 1);
                 }
             }
 
@@ -127,6 +134,7 @@ namespace TourOperator.Application.Services
             await _hub.Clients.Client(connectionId).SendAsync("Progress", "Bulk insert completed", ct);
             Log.Information("CSV processing completed for tourOperatorId={TourOperatorId}. Processed={Processed}", tourOperatorId, processed);
         }
+
 
         private DataTable CreateDataTableSkeleton()
         {
