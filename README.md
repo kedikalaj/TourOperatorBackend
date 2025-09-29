@@ -248,7 +248,7 @@ const connection = new signalR.HubConnectionBuilder()
 
 ```
 
-<img width="1361" height="760" alt="image" src="https://github.com/user-attachments/assets/d5cf48f6-ee53-481c-a172-b086f2db02aa" />
+ <img width="1190" height="675" alt="image" src="https://github.com/user-attachments/assets/2143f737-fe60-4e21-a4d3-2ec39d81bda1" />
 
 
 ---
